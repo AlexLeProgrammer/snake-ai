@@ -3,6 +3,8 @@
  * @author Alex Etienne.
  */
 
+"use strict";
+
 //#region Constants
 
 // Get the canvas
