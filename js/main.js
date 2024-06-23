@@ -19,7 +19,10 @@ CANVAS.height = 176;
 const GRID_SIZE = 11;
 
 // Game
-const WAIT_TIME = 100;
+const WAIT_TIME = 1;
+const MAX_GEN_TIME = 50;
+const SNAKES_COUNT = 150;
+const SNAKES_KEEP_COUNT = 20;
 
 //#enregion
 
@@ -27,10 +30,18 @@ const WAIT_TIME = 100;
 
 class Snake {
     body = [{x:5, y:5}, {x:5, y:6}];
-    appleX = 0;
-    appleY = 0;
+    appleX = Math.floor(Math.random() * GRID_SIZE);
+    appleY = Math.floor(Math.random() * GRID_SIZE);
     direction = 0;
     dead = false;
+
+    constructor(nn = null) {
+        if (nn !== null) {
+            this.neural_network = nn;
+        } else {
+            this.neural_network = new NeuralNetwork([GRID_SIZE*GRID_SIZE, 30, 30, 3]);
+        }
+    }
 
     /**
      * Turn the snake.
@@ -71,6 +82,8 @@ class Snake {
 
 // Game
 let time = 0;
+let generation = 0;
+let display = true;
 
 // Snakes
 let snakes = [new Snake()];
@@ -83,11 +96,34 @@ let inputRight = false;
 
 //#region Functions
 
+/**
+ * Copy a neural network.
+ * @param nn The neural network to copy.
+ * @return {NeuralNetwork} The new neural network.
+ */
+function getNeuralNetCopy(nn) {
+    let nnCopy = new NeuralNetwork([GRID_SIZE*GRID_SIZE, 30, 30, 3]);
+    for (let i = 0; i < nn.neurons.length; i++) {
+        for (let j = 0; j < nn.neurons[i].length; j++) {
+            nnCopy.neurons[i][j].weights = {...nn.neurons[i][j].weights};
+            nnCopy.neurons[i][j].bias = nn.neurons[i][j].bias;
+        }
+    }
+
+    return nnCopy;
+}
+
 //#endregion
+
+// Add the first snakes
+for (let i = 0; i < SNAKES_COUNT * 10; i++) {
+    snakes.push(new Snake());
+}
 
 // Main loop
 setInterval(() => {
     // Update the snakes
+    let deadCount = 0;
     for (let snake of snakes) {
         if (!snake.dead) {
             // Eat apple
@@ -104,14 +140,41 @@ setInterval(() => {
 
             // Move
             if (time % WAIT_TIME === 0) {
-                // Turn
+                // Create the input of the snake
+                let map = [];
+                for (let i = 0; i < GRID_SIZE * GRID_SIZE; i++) {
+                    map.push(0);
+                }
 
+                // Add the apple
+                map[snake.appleY * GRID_SIZE + snake.appleX] = 1;
+
+                // Add the head
+                map[snake.body[0].y * GRID_SIZE + snake.body[0].x] = 2;
+
+                // Add the tail to the map
+                for (let i = 1; i < snake.body.length; i++) {
+                    map[snake.body[i].y * GRID_SIZE + snake.body[i].x] = 3;
+                }
 
                 // Move the tail
                 for (let i = snake.body.length - 1; i > 0; i--) {
                     snake.body[i].x = snake.body[i - 1].x;
                     snake.body[i].y = snake.body[i - 1].y;
                 }
+
+                // Get the output of the neural network and turn
+                const OUT = snake.neural_network.out(map);
+                if (OUT[1] > OUT[2]) {
+                    if (OUT[1] > OUT[0]) {
+                        snake.turn(true);
+                    }
+                } else if (OUT[2] > OUT[1]) {
+                    if (OUT[2] > OUT[0]) {
+                        snake.turn(false);
+                    }
+                }
+
 
                 // Move in the direction of the snake
                 switch (snake.direction) {
@@ -125,42 +188,83 @@ setInterval(() => {
                     snake.dead = true;
                 }
             }
-        }
-
-
-    }
-
-
-    CTX.clearRect(0,0,CANVAS.width,CANVAS.height);
-
-    const CELL_SIZE = CANVAS.width / GRID_SIZE;
-
-    // Draw the apple
-    CTX.fillStyle = "#F00";
-    CTX.fillRect(snakes[0].appleX * CELL_SIZE, snakes[0].appleY * CELL_SIZE, CELL_SIZE + 1, CELL_SIZE + 1);
-
-    // Draw the snake
-    for (let i = 0; i < snakes[0].body.length; i++) {
-        if (i === 0) {
-            CTX.fillStyle = "#0F0";
         } else {
-            CTX.fillStyle = "#0B0";
+            deadCount++;
+        }
+    }
+
+    // Stop the generation and start another one
+    if (deadCount === snakes.length || time % MAX_GEN_TIME === 0) {
+        // Get the best snakes
+        snakes.sort((a, b) => b.body.length - a.body.length);
+        snakes.slice(0, SNAKES_KEEP_COUNT);
+
+        // Create the new generation
+
+        // Recreate first snakes
+        let newSnakes = [];
+        for (let i = 0; i < SNAKES_KEEP_COUNT; i++) {
+            newSnakes.push(new Snake(snakes[i].neural_network));
         }
 
-        CTX.fillRect(snakes[0].body[i].x * CELL_SIZE, snakes[0].body[i].y * CELL_SIZE, CELL_SIZE + 1, CELL_SIZE + 1);
+        // Mutate snakes
+        let mutatedSnakes = [];
+        for (let i = 0; i < SNAKES_KEEP_COUNT * 3; i++) {
+            mutatedSnakes.push(new Snake());
+            mutatedSnakes[i].neural_network = getNeuralNetCopy(snakes[i % snakes.length].neural_network);
+            mutatedSnakes[i].neural_network.mutate(-0.1, 0.1);
+        }
+
+        // Push the new snakes into snakes[]
+        snakes = [];
+        for (let snake of newSnakes) {
+            snakes.push(snake);
+        }
+        for (let snake of mutatedSnakes) {
+            snakes.push(snake);
+        }
+
+        // Add the other snakes
+        for (let i = 0; i < SNAKES_COUNT - SNAKES_KEEP_COUNT * 4; i++) {
+            snakes.push(new Snake());
+        }
+
+        generation++;
+        console.log(generation);
     }
 
-    // Draw the grid
-    CTX.fillStyle = "#FFF";
+    if (display) {
+        CTX.clearRect(0,0,CANVAS.width,CANVAS.height);
 
-    // Vertical lines
-    for (let i = 1; i < GRID_SIZE; i++) {
-        CTX.fillRect(i * CELL_SIZE, 0, 1, CANVAS.height);
-    }
+        const CELL_SIZE = CANVAS.width / GRID_SIZE;
 
-    // Horizontal lines
-    for (let i = 1; i < GRID_SIZE; i++) {
-        CTX.fillRect(0, i * CELL_SIZE, CANVAS.width, 1);
+        // Draw the apple
+        CTX.fillStyle = "#F00";
+        CTX.fillRect(snakes[0].appleX * CELL_SIZE, snakes[0].appleY * CELL_SIZE, CELL_SIZE + 1, CELL_SIZE + 1);
+
+        // Draw the snake
+        for (let i = 0; i < snakes[0].body.length; i++) {
+            if (i === 0) {
+                CTX.fillStyle = "#0F0";
+            } else {
+                CTX.fillStyle = "#0B0";
+            }
+
+            CTX.fillRect(snakes[0].body[i].x * CELL_SIZE, snakes[0].body[i].y * CELL_SIZE, CELL_SIZE + 1, CELL_SIZE + 1);
+        }
+
+        // Draw the grid
+        CTX.fillStyle = "#FFF";
+
+        // Vertical lines
+        for (let i = 1; i < GRID_SIZE; i++) {
+            CTX.fillRect(i * CELL_SIZE, 0, 1, CANVAS.height);
+        }
+
+        // Horizontal lines
+        for (let i = 1; i < GRID_SIZE; i++) {
+            CTX.fillRect(0, i * CELL_SIZE, CANVAS.width, 1);
+        }
     }
 
     // Increase time

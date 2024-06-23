@@ -13,7 +13,7 @@ class Neuron {
     isInput = false;
     weights = [];
     linkedNeurons = [];
-    bias = Math.random();
+    bias = Math.random() * 2 - 1;
 
     /**
      * Constructor.
@@ -24,7 +24,7 @@ class Neuron {
         if (!isInput) {
             // If the neuron is not an input, create weights and assign linked neurons
             for (let i = 0; i < linkedNeurons.length; i++) {
-                this.weights.push(Math.random());
+                this.weights.push(Math.random() * 2 - 1);
             }
 
             this.linkedNeurons = linkedNeurons;
@@ -47,7 +47,7 @@ class Neuron {
             result += this.weights[i] * this.linkedNeurons[i].out();
         }
 
-        return sigmoid(result + this.bias);
+        return result + this.bias;
     }
 }
 
