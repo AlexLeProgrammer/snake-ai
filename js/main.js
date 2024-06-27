@@ -20,10 +20,10 @@ const GRID_SIZE = 11;
 
 // Game
 const WAIT_TIME = 1;
-const MAX_GEN_TIME = 300;
-const SNAKES_COUNT = 5000;
-const SNAKES_KEEP_COUNT = 500;
-
+const MAX_GEN_TIME = 100;
+const SNAKES_COUNT = 10000;
+const SNAKES_KEEP_COUNT = 200;
+const RANDOM_SNAKES_COUNT = 200;
 //#enregion
 
 //#region Classes
@@ -40,7 +40,7 @@ class Snake {
         if (nn !== null) {
             this.neural_network = nn;
         } else {
-            this.neural_network = new NeuralNetwork([4, 10, 10, 4]);
+            this.neural_network = new NeuralNetwork([4, 10, 10, 1]);
         }
     }
 
@@ -85,7 +85,7 @@ let inputRight = false;
  * @return {NeuralNetwork} The new neural network.
  */
 function getNeuralNetCopy(nn) {
-    let nnCopy = new NeuralNetwork([4, 10, 10, 4]);
+    let nnCopy = new NeuralNetwork([4, 10, 10, 1]);
     for (let i = 0; i < nn.neurons.length; i++) {
         for (let j = 0; j < nn.neurons[i].length; j++) {
             nnCopy.neurons[i][j].weights = {...nn.neurons[i][j].weights};
@@ -152,8 +152,7 @@ setInterval(() => {
                 input.push(minDistanceX, minDistanceY);
 
                 // Get the output of the neural network and turn
-                const OUT = snake.neural_network.out(input);
-                snake.direction = OUT.indexOf(Math.max(OUT));
+                snake.direction = Math.floor(snake.neural_network.out(input)[0]) % 4;
 
                 // Move the tail
                 for (let i = snake.body.length - 1; i > 0; i--) {
@@ -183,11 +182,6 @@ setInterval(() => {
         // Get the best snakes
         snakes.sort((a, b) => b.body.length - a.body.length);
 
-        // If the snakes haven't eaten any apple sort them by their lifetime
-        if (snakes[0].body.length === 2) {
-            snakes.sort((a, b) => b.timeLived - a.timeLived);
-        }
-
         snakes.slice(0, SNAKES_KEEP_COUNT);
 
         // Create the new generation
@@ -200,10 +194,10 @@ setInterval(() => {
 
         // Mutate snakes
         let mutatedSnakes = [];
-        for (let i = 0; i < SNAKES_KEEP_COUNT * 6; i++) {
+        for (let i = 0; i < SNAKES_COUNT - SNAKES_KEEP_COUNT - RANDOM_SNAKES_COUNT; i++) {
             mutatedSnakes.push(new Snake());
             mutatedSnakes[i].neural_network = getNeuralNetCopy(snakes[i % snakes.length].neural_network);
-            mutatedSnakes[i].neural_network.mutate(-0.1, 0.1);
+            mutatedSnakes[i].neural_network.mutate(-1, 1);
         }
 
         // Push the new snakes into snakes[]
@@ -215,8 +209,7 @@ setInterval(() => {
             snakes.push(snake);
         }
 
-        // Add the other snakes
-        for (let i = 0; i < SNAKES_COUNT - SNAKES_KEEP_COUNT * 7; i++) {
+        for (let i = 0; i < RANDOM_SNAKES_COUNT; i++) {
             snakes.push(new Snake());
         }
 
