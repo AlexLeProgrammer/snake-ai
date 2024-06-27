@@ -20,9 +20,9 @@ const GRID_SIZE = 11;
 
 // Game
 const WAIT_TIME = 1;
-const MAX_GEN_TIME = 50;
-const SNAKES_COUNT = 150;
-const SNAKES_KEEP_COUNT = 20;
+const MAX_GEN_TIME = 300;
+const SNAKES_COUNT = 5000;
+const SNAKES_KEEP_COUNT = 500;
 
 //#enregion
 
@@ -34,30 +34,13 @@ class Snake {
     appleY = Math.floor(Math.random() * GRID_SIZE);
     direction = 0;
     dead = false;
+    timeLived = 0;
 
     constructor(nn = null) {
         if (nn !== null) {
             this.neural_network = nn;
         } else {
-            this.neural_network = new NeuralNetwork([GRID_SIZE*GRID_SIZE, 30, 30, 3]);
-        }
-    }
-
-    /**
-     * Turn the snake.
-     * @param left If we want to the snake to turn to the left : true, else : false.
-     */
-    turn(left) {
-        if (left && this.direction === 0) {
-            this.direction = 3;
-        } else if (left) {
-            this.direction--;
-        }
-
-        if (!left && this.direction === 3) {
-            this.direction = 0;
-        } else if (!left) {
-            this.direction++;
+            this.neural_network = new NeuralNetwork([4, 10, 10, 4]);
         }
     }
 
@@ -102,7 +85,7 @@ let inputRight = false;
  * @return {NeuralNetwork} The new neural network.
  */
 function getNeuralNetCopy(nn) {
-    let nnCopy = new NeuralNetwork([GRID_SIZE*GRID_SIZE, 30, 30, 3]);
+    let nnCopy = new NeuralNetwork([4, 10, 10, 4]);
     for (let i = 0; i < nn.neurons.length; i++) {
         for (let j = 0; j < nn.neurons[i].length; j++) {
             nnCopy.neurons[i][j].weights = {...nn.neurons[i][j].weights};
@@ -116,7 +99,7 @@ function getNeuralNetCopy(nn) {
 //#endregion
 
 // Add the first snakes
-for (let i = 0; i < SNAKES_COUNT * 10; i++) {
+for (let i = 0; i < SNAKES_COUNT; i++) {
     snakes.push(new Snake());
 }
 
@@ -126,6 +109,8 @@ setInterval(() => {
     let deadCount = 0;
     for (let snake of snakes) {
         if (!snake.dead) {
+            snake.timeLived++;
+
             // Eat apple
             if (snake.body[0].x === snake.appleX && snake.body[0].y === snake.appleY) {
                 snake.body.push({x: snake.body[snake.body.length - 1].x, y: snake.body[snake.body.length - 1].y});
@@ -141,40 +126,40 @@ setInterval(() => {
             // Move
             if (time % WAIT_TIME === 0) {
                 // Create the input of the snake
-                let map = [];
-                for (let i = 0; i < GRID_SIZE * GRID_SIZE; i++) {
-                    map.push(0);
+                let input = [];
+
+                // Calculate the distance with the apple
+                input.push(snake.appleX - snake.body[0].x, snake.appleY - snake.body[0].y);
+
+                // Get the nearest collision
+                let minDistanceX = snake.body[0].x < (GRID_SIZE - 1) / 2 ? 1 - snake.body[0].x : GRID_SIZE - snake.body[0].x;
+                let minDistanceY = snake.body[0].y < (GRID_SIZE - 1) / 2 ? 1 - snake.body[0].y : GRID_SIZE - snake.body[0].y;
+
+                for (let i = 1; i  < snake.body.length; i++) {
+                    // X axis
+                    let distance = snake.body[i].x - snake.body[0].x;
+                    if (snake.body[i].y === snake.body[0].y && Math.abs(distance) < Math.abs(minDistanceX)) {
+                        minDistanceX = distance;
+                    }
+
+                    // Y axis
+                    distance = snake.body[i].y - snake.body[0].y;
+                    if (snake.body[i].x === snake.body[0].x && Math.abs(distance) < Math.abs(minDistanceY)) {
+                        minDistanceY = distance;
+                    }
                 }
 
-                // Add the apple
-                map[snake.appleY * GRID_SIZE + snake.appleX] = 1;
+                input.push(minDistanceX, minDistanceY);
 
-                // Add the head
-                map[snake.body[0].y * GRID_SIZE + snake.body[0].x] = 2;
-
-                // Add the tail to the map
-                for (let i = 1; i < snake.body.length; i++) {
-                    map[snake.body[i].y * GRID_SIZE + snake.body[i].x] = 3;
-                }
+                // Get the output of the neural network and turn
+                const OUT = snake.neural_network.out(input);
+                snake.direction = OUT.indexOf(Math.max(OUT));
 
                 // Move the tail
                 for (let i = snake.body.length - 1; i > 0; i--) {
                     snake.body[i].x = snake.body[i - 1].x;
                     snake.body[i].y = snake.body[i - 1].y;
                 }
-
-                // Get the output of the neural network and turn
-                const OUT = snake.neural_network.out(map);
-                if (OUT[1] > OUT[2]) {
-                    if (OUT[1] > OUT[0]) {
-                        snake.turn(true);
-                    }
-                } else if (OUT[2] > OUT[1]) {
-                    if (OUT[2] > OUT[0]) {
-                        snake.turn(false);
-                    }
-                }
-
 
                 // Move in the direction of the snake
                 switch (snake.direction) {
@@ -197,6 +182,12 @@ setInterval(() => {
     if (deadCount === snakes.length || time % MAX_GEN_TIME === 0) {
         // Get the best snakes
         snakes.sort((a, b) => b.body.length - a.body.length);
+
+        // If the snakes haven't eaten any apple sort them by their lifetime
+        if (snakes[0].body.length === 2) {
+            snakes.sort((a, b) => b.timeLived - a.timeLived);
+        }
+
         snakes.slice(0, SNAKES_KEEP_COUNT);
 
         // Create the new generation
@@ -209,7 +200,7 @@ setInterval(() => {
 
         // Mutate snakes
         let mutatedSnakes = [];
-        for (let i = 0; i < SNAKES_KEEP_COUNT * 3; i++) {
+        for (let i = 0; i < SNAKES_KEEP_COUNT * 6; i++) {
             mutatedSnakes.push(new Snake());
             mutatedSnakes[i].neural_network = getNeuralNetCopy(snakes[i % snakes.length].neural_network);
             mutatedSnakes[i].neural_network.mutate(-0.1, 0.1);
@@ -225,7 +216,7 @@ setInterval(() => {
         }
 
         // Add the other snakes
-        for (let i = 0; i < SNAKES_COUNT - SNAKES_KEEP_COUNT * 4; i++) {
+        for (let i = 0; i < SNAKES_COUNT - SNAKES_KEEP_COUNT * 7; i++) {
             snakes.push(new Snake());
         }
 
